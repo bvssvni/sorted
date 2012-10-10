@@ -1,0 +1,8 @@
+
+sorted.h - Specs under work
+sorted.c - Not complete
+
+I got some stuff in C# that I want to translate in C,
+so I need a sorted list. When writing the specs I needed
+I figured out some few features that makes simple C programs
+easier, for example saving data to files with dependices.
