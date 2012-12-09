@@ -35,12 +35,33 @@ void test_double_sorted_1(void)
 	gcSet(list, NULL);
 }
 
+void test_expansion_1(void)
+{
+	typedef double_sorted sorted;
+	func(double_sorted, PushValue);
+	
+	sorted *list = double_sorted_New(0, double_Compare);
+	assert(list->items.cap == 0);
+	PushValue(list, 1);
+	assert(list->items.cap == 1);
+	PushValue(list, 2);
+	assert(list->items.cap == 2);
+	PushValue(list, 3);
+	assert(list->items.cap == 4);
+	PushValue(list, 4);
+	assert(list->items.cap == 4);
+	PushValue(list, 5);
+	assert(list->items.cap == 8);
+	gcSet(list, NULL);
+}
+
 int main(int argc, char *argv[])
 {
 	int i;
 	int end = 1 << 0; // 25;
 	for (i = 0; i < end; i++) {
 		test_double_sorted_1();
+		test_expansion_1();
 	}
 	return 0;
 }
