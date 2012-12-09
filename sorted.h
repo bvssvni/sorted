@@ -31,76 +31,127 @@
  either expressed or implied, of the FreeBSD Project.
  */
 
-
 /*
+ 
+ This is a list with a sorted index attached to it.
+ In the list itself, the items are stored in the order they are added.
+ The sorted indices maps order to the item index.
+ 
+ Can be used as a stack with unique elements.
+ 
+	sorted_type(double);	// Goes into C header.
+ 
+	sorted_methods(double);	// Goes into the .c file.
+ 
+	double_sorted *list = double_sorted 
+ 
+ */
 
- This is a generic sorted list for storing pointers or data in long format.
- I want to use 2^x expansion to have few memory allocations.
- I will keep the data separate allocated from the struct to be able
- to pass around the pointer without worrying about the expansion.
- 
- Sorting will be explicit but it will still work without calling 'Sort'.
- The part that is not sorted will be linearly searched,
- while the part that is sorted will be binary searched.
- 
- When looking up index, it will always check the reference value of
- the pointer first to see if it is inside the data range.
- If so, it can calculate the index directly using pointer arithmetic.
- Else it does normal search.
- 
- Instead of storing key/value pairs, the objects has to be key/value
- pairs themselves. This is handled by the compare function.
- 
- When the positions are used up, it will expand to twice the size and
- copy the data to new memory location. It will shrink only when using
- less than half the size and 'Shrink' is called.
- 
- For simple reading and saving, the sorted list will have
- dependices to other sorted lists which it will save to the same
- file before it saves itself. Basically it will dump the data with
- dependices first, so don't use this on structures with pointers.
- 
- It is neither safe to keep and use either index or pointer to item.
- Instead, sort items by a unique identifier and then use this
- to refer between sorted lists. This will also make it possible to
- link dependices between lists and just save the whole thing with
- one line of code.
- 
- It will also be possible to use custom allocations to speed up
- a program. By setting compare function to NULL, the blocks
- will just be put together when calling 'free'.
- 
-*/
+#ifndef SORTED_GUARD
+#define SORTED_GUARD
 
-typedef struct sorted sorted;
-typedef struct
-{
-    int (*compare)(void *a, void *b); // function to compare items.
-    int itemSize; // the size of an item in bytes.
-    int sortedIndex; // index of last sorted item.
-    unsigned long cap; // capacity.
-    unsigned long len; // length.
-    void *data; // contains the data.
-    sorted *dependices; // array of dependices ending with NULL.
-} sorted;
+#include "ref.h"
+#include "slice.h"
 
-sorted *sorted_New
-(int cap, int itemSize, sorted *dependices, int (*compare)(void *a, void *b));
-int sorted_IndexOf(sorted *list, void *a); // returns index of item.
-void sorted_Sort(sorted *list); // sorts the list, does searching faster.
-sorted *sorted_Copy(sorted *list); // creates a copy.
-sorted *sorted_CopyCascade(sorted *list); // creates a copy with dependices.
-void *sorted_ByIndex(sorted *list, int index); // finds item by index.
-void *sorted_Shrink(void); // shrinks to fit the capacity to items.
-void sorted_Save(const char *filename); // saves data to file (with dependices).
-sorted *sorted_Read(const char *filename); // reads data from file.
-void sorted_Add(sorted *list, void *a); // copies item and adds it to list.
-void *sorted_Blank(sorted *list); // adds empty item at end.
-void sorted_Set(sorted *list, int index, void *a); // copies item.
-void sorted_Insert(sorted *list, int index, void *a); // inserts a copy.
-void sorted_Remove(sorted *list, int index); // removes by index.
-unsigned long sorted_Length(sorted *list); // returns number of items.
+#ifndef INT_SLICE
+#define INT_SLICE
+slice_type(int);
+#endif
+// Declares the information that goes into a header.
+#define sorted_type(type)\
+slice_type(type);\
+/* Creates the structure of the sorted list. */\
+typedef struct\
+{\
+	ref ref; /* Uses Ref garbage collection. */\
+	type##_slice items; /* Contains the items. */\
+	int_slice sortedindices; /* Maps sorted order to list. */\
+	int (*compare)(const type *a, const type *b);\
+} type##_sorted;\
+/*	Creates a new sorted list. */\
+type##_sorted *type##_sorted_New\
+(int capacity, int (*compare)(const type *a, const type *b));\
+int type##_sorted_SortedIndex(type##_sorted *a, const type *item);\
+int type##_sorted_Push(type##_sorted *a, const type *item);\
+int type##_sorted_PushValue(type##_sorted *a, const type item);\
+type type##_sorted_Pop(type##_sorted *a);\
+int type##_sorted_Contains(type##_sorted *a, const type *b);
 
-void *sorted_malloc(sorted *list); // custom allocations.
-void sorted_free(sorted *list, void *a); // free memory.
+// Declares the stuff that is put into the .c file.
+#define sorted_methods(type)\
+/*	Cleans up the memory allocated by the slices.
+	This method is used by Ref garbage collector.
+*/\
+void type##_sorted_Delete(void *ptr)\
+{\
+	type##_sorted *a = ptr;\
+	slice_free(a->items);\
+	slice_free(a->sortedindices);\
+}\
+/* Method declaration for the sorted list. */\
+type##_sorted *type##_sorted_New\
+(int capacity, int (*compare)(const type *a, const type *b))\
+{\
+	gcInit(type##_sorted, a, .ref.destructor = type##_sorted_Delete);\
+	a->items = slice_make(type, capacity);\
+	a->sortedindices = slice_make(int, capacity);\
+	a->compare = compare;\
+	return a;\
+}\
+/*	Returns the sorted index of an item.
+	This is positive if the item already exists in the list.
+	If the item does not exists, the negative index minus one of
+	the smallest item that is larger, is returned.
+	The negative index is used to insert new items correctly.
+
+	The sorted index can be used to measure how it is related to other
+	items in the same list.
+*/\
+int type##_sorted_SortedIndex(type##_sorted *a, const type *item)\
+{\
+	return slice_binarysearch_sortedindex\
+	(a->items, a->sortedindices, a->compare, *item);\
+}\
+/*	Method for pushing items to the sorted list, like a stack. 
+	Returns 0 if the item was not inserted and 1 if it was inserted.
+*/\
+int type##_sorted_Push(type##_sorted *a, const type *item)\
+{\
+	int sortedindex = type##_sorted_SortedIndex(a, item);\
+	if (sortedindex >= 0) return 0;\
+	/* Double the capacity when needing more space. */\
+	int block = a->items.cap == 0 ? 1 : (a->items.cap << 1);\
+	slice_check(type, a->items, 1, block);\
+	slice_check(int, a->sortedindices, 1, block);\
+	slice_push(a->items, *item);\
+	sortedindex = -(sortedindex+1);\
+	slice_insert(a->sortedindices, sortedindex, a->items.len-1);\
+	return 1;\
+}\
+/*	Pushes a value to the list instead by reference. */\
+int type##_sorted_PushValue(type##_sorted *a, const type item)\
+{\
+	return type##_sorted_Push(a, &item);\
+}\
+/*	Pops the last item from the list. */\
+type type##_sorted_Pop(type##_sorted *a)\
+{\
+	type b = slice_pop(a->items);\
+	int sortedindex = type##_sorted_SortedIndex(a, &b);\
+	slice_cut(a->sortedindices, sortedindex, sortedindex+1);\
+	return b;\
+}\
+/*	Returns 1 if the list contains and item and 0 if it doesn't contains it.
+*/\
+int type##_sorted_Contains(type##_sorted *a, const type *b)\
+{\
+	return type##_sorted_SortedIndex(a, b) >= 0;\
+}
+
+#endif
+// Used to emulate namespace aliasing.
+#ifndef FUNC_GUARD
+#define FUNC_GUARD
+#define func(ns, n) static __typeof__(ns##_##n) * const n = ns##_##n
+#endif
 
