@@ -120,6 +120,7 @@ int type##_sorted_Push(type##_sorted *a, const type *item)\
 	int sortedindex = type##_sorted_SortedIndex(a, item);\
 	if (sortedindex >= 0) return 0;\
 	/* Double the capacity when needing more space. */\
+	assert(a->items.cap >= a->items.len);\
 	int block = a->items.cap == 0 ? 1 : (a->items.cap << 1) - a->items.len;\
 	slice_check(type, a->items, 1, block);\
 	slice_check(int, a->sortedindices, 1, block);\

@@ -90,7 +90,7 @@ void test_pop_1(void)
 int main(int argc, char *argv[])
 {
 	int i;
-	int end = 1 << 0; // 25;
+	int end = 1 << 22;
 	for (i = 0; i < end; i++) {
 		test_double_sorted_1();
 		test_expansion_1();
